@@ -19,8 +19,12 @@ Extract the release zip into the Azimuth folder (next to `azimuth.exe`):
 ```
 DWrite.dll                       the FH2 Mod Platform
 fh2-mods\XboxMusicRadio.dll      the mod
+README.txt, README.zh-CN.txt     this README, in English and Chinese
 LICENSE*.txt                     licenses
 ```
+
+> [!IMPORTANT]
+> `XboxMusicRadio.dll` goes in the **`fh2-mods`** folder, the FH2 Mod Platform's. Don't put it in **`mods`**: that folder belongs to Extra Options and holds its plugins, and the mod won't load from there.
 
 Start the game once. It makes an `XboxMusicRadio` folder next to `azimuth.exe` with `XboxMusicRadio.ini`.
 

@@ -4,6 +4,7 @@ name: Build
 # Azimuth folder:
 #   DWrite.dll                       the FH2 Mod Platform (next to azimuth.exe; Azimuth 1.0.1 and later load it)
 #   fh2-mods/XboxMusicRadio.dll      the mod
+#   README.txt, README.zh-CN.txt     the READMEs (Markdown, as .txt so they open anywhere)
 #   LICENSE*.txt                     the mod's and the platform's licenses
 #
 # Run by hand (Actions > Build > Run workflow): the zip is uploaded as an artifact of the run.
@@ -66,6 +67,8 @@ jobs:
           mkdir -p dist/fh2-mods
           cp build/platform/DWrite.dll dist/
           cp build/XboxMusicRadio.dll dist/fh2-mods/
+          cp README.md dist/README.txt
+          cp README.zh-CN.md dist/README.zh-CN.txt
           cp LICENSE dist/LICENSE.txt
           cp platform/LICENSE dist/LICENSE-FH2ModPlatform.txt
           cp platform/third_party/minhook/LICENSE.txt dist/LICENSE-MinHook.txt

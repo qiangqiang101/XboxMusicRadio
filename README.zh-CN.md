@@ -18,8 +18,12 @@
 ```
 DWrite.dll                       FH2 Mod Platform（模组平台）
 fh2-mods\XboxMusicRadio.dll      本模组
+README.txt, README.zh-CN.txt     本说明（英文、中文）
 LICENSE*.txt                     许可证
 ```
+
+> [!IMPORTANT]
+> `XboxMusicRadio.dll` 要放在 **`fh2-mods`** 文件夹里，那是 FH2 Mod Platform（模组平台）的文件夹。不要放进 **`mods`**：那个文件夹属于 Extra Options，用来放它的插件，模组放在那里不会被加载。
 
 先启动一次游戏。它会在 `azimuth.exe` 旁边建一个 `XboxMusicRadio` 文件夹，里面有 `XboxMusicRadio.ini`。
 
