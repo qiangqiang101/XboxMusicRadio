@@ -73,7 +73,9 @@ Music\
    下载 Windows 版 Soloist，把 `soloist.exe` 放进 `XboxMusicRadio` 文件夹。Spotify 不允许转发它，所以模组的 zip 里
    没有。Soloist 每个版本 90 天后过期；到时候日志会提醒你换新的。
 3. 启动游戏。暂停 > 设置 > Audio Options：在 Xbox Music 下选 **Spotify**。
-4. 在 Spotify 应用里（手机或电脑，同一个网络），选择设备 **FH2 Radio**，随便播放点什么。
+4. 在 Spotify 应用里（手机或电脑，同一个网络），选择设备 **FH2 Radio**，随便播放点什么。只有第一次需要这样做：
+   Soloist 会保持登录，之后每次切到这个电台，模组都会自动把 Spotify 播放转到 **FH2 Radio** 并开始播放
+   （在 `[spotify]` 下设置 `auto_activate=0` 可关闭）。
 
 游戏运行时，模组在后台隐藏运行 Soloist，把它的声音放到电台上。歌单和歌曲在 Spotify 应用里选。Soloist 本身的声音会在
 Windows 音量合成器里调低到 -80 dB，所以你只会在电台里听到。**F6** 切歌；切到别的电台时 Spotify 会暂停，切回来时

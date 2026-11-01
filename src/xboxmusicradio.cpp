@@ -520,6 +520,9 @@ void write_default_ini() {
         "volume=100\r\n"
         "; 1: turn Soloist's own sound down (-80 dB in the volume mixer) so it's only heard on the radio\r\n"
         "quiet_speakers=1\r\n"
+        "; 1: when the radio switches to Spotify, move Spotify playback to the device above and play (once Soloist is\r\n"
+        ";    signed in: after you've picked the device in the Spotify app once)\r\n"
+        "auto_activate=1\r\n"
         "\r\n"
         "; Music apps: each is a playlist in Audio Options. Choose it and play something in the app. While the radio plays\r\n"
         "; it, the app's own sound is turned down (-80 dB in the volume mixer) and put back after (quiet_speakers=0: not).\r\n"
@@ -609,7 +612,8 @@ void start_music_apps() {
 void add_missing_settings() {
     const wchar_t* const keys[][3] = {
         {L"spotify", L"enabled", L"1"}, {L"spotify", L"api_key", L""},          {L"spotify", L"device", L"FH2 Radio"},
-        {L"spotify", L"volume", L"100"}, {L"spotify", L"quiet_speakers", L"1"}, {L"youtube", L"enabled", L"1"},
+        {L"spotify", L"volume", L"100"}, {L"spotify", L"quiet_speakers", L"1"}, {L"spotify", L"auto_activate", L"1"},
+        {L"youtube", L"enabled", L"1"},
         {L"youtube", L"app", L""},       {L"youtube", L"quiet_speakers", L"1"},  {L"netease", L"enabled", L"1"},
         {L"netease", L"app", L""},       {L"netease", L"quiet_speakers", L"1"},  {L"netease", L"play_pause_key", L"Ctrl+Alt+P"},
         {L"netease", L"next_key", L"Ctrl+Alt+Right"}, {L"qqmusic", L"enabled", L"1"}, {L"qqmusic", L"app", L""},
@@ -761,6 +765,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
         sp.device         = ini_string(L"spotify", L"device", L"FH2 Radio");
         sp.volume         = GetPrivateProfileIntW(L"spotify", L"volume", 100, g_ini.c_str());
         sp.quiet_speakers = GetPrivateProfileIntW(L"spotify", L"quiet_speakers", 1, g_ini.c_str()) != 0;
+        sp.auto_activate  = GetPrivateProfileIntW(L"spotify", L"auto_activate", 1, g_ini.c_str()) != 0;
         spotify_start(sp, [](const char* line) { g_api->log(g_mod, line); });
     }
     start_music_apps();

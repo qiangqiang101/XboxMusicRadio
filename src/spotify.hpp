@@ -21,6 +21,7 @@ struct SpotifyOptions {
     std::wstring api_key;        // the Soloist API key
     int volume          = 100;   // Soloist's starting volume (the Spotify app's slider)
     bool quiet_speakers = true;  // turn Soloist's own sound down to -80 dB so it's only heard on the radio
+    bool auto_activate  = true;  // when the station switches to Spotify, move Spotify playback to Soloist and play
 };
 
 // Starts Soloist if soloist.exe is there and there's an API key, and adds Spotify to the station's live players.

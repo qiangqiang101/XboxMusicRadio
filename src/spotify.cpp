@@ -26,6 +26,9 @@ HANDLE g_proc = nullptr;
 DWORD g_pid   = 0;
 std::atomic<bool> g_running{false};
 std::atomic<bool> g_playing{false};
+std::atomic<bool> g_logged_in{false};
+std::atomic<bool> g_active{false};      // Soloist is the active Spotify Connect device
+std::atomic<bool> g_play_on_active{false};   // auto_activate asked for it: play once it's active
 volatile bool g_stop_capture = false;
 std::atomic<float> g_gain{1.0f};   // undoes the volume mixer setting on the recording
 
@@ -221,6 +224,14 @@ private:
     }
 };
 
+bool send_command(const char* command) {
+    char msg[128];
+    std::snprintf(msg, sizeof msg, "{\"type\":\"command\",\"command\":\"%s\"}", command);
+    std::lock_guard<std::mutex> lk(g_ws_mx);
+    return g_ws && WinHttpWebSocketSend(g_ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, msg, static_cast<DWORD>(std::strlen(msg))) ==
+                       ERROR_SUCCESS;
+}
+
 // ---- Events ----------------------------------------------------------------------------------------------------
 
 // Entity: the name at decorations.identity.name (or name), artists at decorations.creators[].entity....
@@ -256,6 +267,8 @@ void on_event(const std::string& text) {
     if (type == "auth_state") {
         static int last = -1;
         int logged_in   = ev["logged_in"].b ? 1 : 0;
+        g_logged_in     = logged_in != 0;
+        g_active        = ev["is_active"].b;
         if (logged_in != last)
             logf(logged_in ? "Soloist: signed in to Spotify" : "Soloist: waiting: in the Spotify app, play on the device \"%s\"",
                  narrow(unquoted(g_opt.device)).c_str());
@@ -267,16 +280,25 @@ void on_event(const std::string& text) {
         set_track(ev["item"]);
     } else if (type == "playback_changed") {
         set_status(ev["status"].s);
+    } else if (type == "device_changed") {
+        g_active = ev["is_active"].b;
+        if (g_active && g_play_on_active.exchange(false)) send_command("play");
     } else if (type == "error") {
         logf("Soloist: %s", text.c_str());
     }
 }
 
-void send_command(const char* command) {
-    char msg[128];
-    std::snprintf(msg, sizeof msg, "{\"type\":\"command\",\"command\":\"%s\"}", command);
-    std::lock_guard<std::mutex> lk(g_ws_mx);
-    if (g_ws) WinHttpWebSocketSend(g_ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, msg, static_cast<DWORD>(std::strlen(msg)));
+// The station just switched to Spotify (or Soloist only now signed in / connected meanwhile): take Spotify playback
+// over from the phone or PC app, so there's no picking the device by hand. Once per time the station switches to it,
+// so moving playback elsewhere while listening sticks.
+// False: not yet (not signed in, or no control connection); try again.
+bool try_activate() {
+    if (!g_logged_in) return false;   // not signed in yet: the first time, the device has to be picked in the Spotify app
+    if (g_active) return true;        // already playing here (or paused here: the station resumes it)
+    g_play_on_active = true;
+    if (!send_command("activate")) return g_play_on_active = false, false;
+    logf("Soloist: moving Spotify playback to \"%s\"", narrow(unquoted(g_opt.device)).c_str());
+    return true;
 }
 
 // ---- The control connection --------------------------------------------------------------------------------------
@@ -399,6 +421,16 @@ public:
     void pause() override { spotify_pause(); }
     void resume() override { spotify_resume(); }
     bool now_playing(std::wstring& title, std::wstring& artist) override { return spotify_now_playing(title, artist); }
+    void set_live(bool live) override {
+        if (live && !was_live_) pending_ = g_opt.auto_activate;
+        if (!live) pending_ = false;
+        if (pending_ && try_activate()) pending_ = false;
+        was_live_ = live;
+    }
+
+private:
+    bool was_live_ = false;   // set_live is called from the station's player thread only
+    bool pending_  = false;
 };
 SpotifyPlayer g_player;
 

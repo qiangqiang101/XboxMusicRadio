@@ -76,7 +76,9 @@ Connect player:
    and put `soloist.exe` in the `XboxMusicRadio` folder. Spotify doesn't allow passing it on, so it isn't in the
    mod's zip. Soloist builds expire after 90 days; the log says when it's time for a new one.
 3. Start the game. Pause > Settings > Audio Options: choose **Spotify** under Xbox Music.
-4. In the Spotify app (phone or PC, same network), pick the device **FH2 Radio** and play anything.
+4. In the Spotify app (phone or PC, same network), pick the device **FH2 Radio** and play anything. You only need
+   to do this the first time: Soloist stays signed in, and from then on the station moves Spotify playback to
+   **FH2 Radio** and starts it each time you switch to it (`auto_activate=0` under `[spotify]` turns that off).
 
 The mod runs Soloist hidden while the game runs and plays its sound on the station. Choose playlists and songs in the
 Spotify app. Soloist's own sound is turned down to -80 dB in the Windows volume mixer, so you only hear it on the
