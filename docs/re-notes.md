@@ -13,6 +13,11 @@ Build: `forza_durango_release_final.exe` (24 Nov 2015). Addresses are RVAs (`gam
   `game+0x55E1A0` (the `GetEconomySettings` reply, byte `+0x41`).
 - Callers: `0xC68D18` (`IsXboxMusicEnabled` menu binding, `+0x431`), `0xE2A41D`, `0x89B2C5` (UI choices), `0xFDE44C`
   (manager update `0xFDE410`), `0x7836D5` (event `0x22`).
+- Audio Options (`0xC68D18` caches the answer at `+0x431` when the page opens) only enables its Xbox Music row in its
+  update `0xC7E9D0` when the campaign has also unlocked the feature: `0xA67500(0xA65CA0(), "xbox_music")`, a lookup
+  of one byte per feature name (`"xbox_music"` `+0x2E`, `"xbox_music_playlists"` `+0x2F`, also `"multiplayer"`,
+  `"festival"`, `"map"`, ...). A save early in the campaign has it locked, so the row stays grey; the mod answers yes
+  for both names. Then it needs the browser started (`+0x472`) and the PlaylistBrowser's state (`manager+0xC0`) > 2.
 - Dev config keys (parsed at `0xF6DD60`): `xboxmusicenabled` (+0x27B0), `xboxmusicenabledduringonline` (+0x27B1),
   `xboxmusicrevokesubscription` (+0x27B2), `xboxmusicforceinvalidregion` (+0x27B3).
 

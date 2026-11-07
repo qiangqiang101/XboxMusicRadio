@@ -35,6 +35,7 @@ constexpr uintptr_t kImageBase = 0x140000000;
 constexpr uintptr_t kRadioVtable      = 0x142E76818;   // RadioSystem vtable; slot +0xC0 = "is Xbox Music available"
 constexpr uintptr_t kStreamRead       = 0x141014960;   // FMOD PCM read callback of the endless Xbox Music stream
 constexpr uintptr_t kStationLocked    = 0x140A65DF0;   // (profile, std::string* name)
+constexpr uintptr_t kFeatureUnlocked  = 0x140A67500;   // (unlocks, std::string* name): campaign feature unlocks
 constexpr uintptr_t kXboxCommand      = 0x141018420;   // RadioSystem Xbox Music command: 0 play, 1 stop
 constexpr uintptr_t kHudRadioEvent    = 0x1407835B0;   // HudStatusRadioManager::OnSystemEvent
 constexpr uintptr_t kHudPush          = 0x14078A070;   // pushes the manager's text to the HUD view model
@@ -274,6 +275,15 @@ int station_locked(void* profile, void* name) {
         last = locked;
     }
     return xbox ? 0 : locked;
+}
+
+// The campaign's feature unlocks (game+0xA67500(unlocks, std::string* name): one byte per name, "xbox_music" at +0x2E,
+// "xbox_music_playlists" at +0x2F). Audio Options greys out its Xbox Music row until the save has unlocked it, so a
+// save early in the campaign can't choose a playlist. Answered yes for both; the string isn't freed.
+int (*g_unlocked_orig)(void*, void*) = nullptr;
+int feature_unlocked(void* unlocks, void* name) {
+    if (str_is(name, "xbox_music") || str_is(name, "xbox_music_playlists")) return 1;
+    return g_unlocked_orig(unlocks, name);
 }
 
 // The radio UI's "next station" (game+0x660E50): walks a std::map of stations at +0x68 (node: left +0, parent +8,
@@ -650,6 +660,8 @@ bool radio_install() {
         hook_fn("radio station available (trace)", kStationAvailable, reinterpret_cast<void*>(&station_available),
                 reinterpret_cast<void**>(&g_station_available_orig));
     }
+    ok &= hook_fn("Xbox Music feature unlock (Audio Options row)", kFeatureUnlocked, reinterpret_cast<void*>(&feature_unlocked),
+                  reinterpret_cast<void**>(&g_unlocked_orig));
     ok &= hook_fn("Xbox Music stream read (music folder)", kStreamRead, reinterpret_cast<void*>(&stream_read), &unused);
     ok &= hook_fn("Xbox Music play/stop", kXboxCommand, reinterpret_cast<void*>(&command), reinterpret_cast<void**>(&g_command_orig));
     ok &= hook_fn("radio HUD (now playing)", kHudRadioEvent, reinterpret_cast<void*>(&hud), reinterpret_cast<void**>(&g_hud_orig));
