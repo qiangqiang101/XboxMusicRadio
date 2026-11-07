@@ -444,7 +444,9 @@ LivePlayer* find_player(const std::wstring& id) {
 }
 
 // The chosen playlist (or live player); if it's gone, All music; with no music files, the first live player playing.
+// Only the player thread calls this; with nothing to play it's asked every second, so each fallback is told once per choice.
 LivePlayer* pick_source(Playlist& out, bool& folder) {
+    static std::wstring warned_id;
     folder = false;
     std::wstring id;
     {
@@ -452,14 +454,20 @@ LivePlayer* pick_source(Playlist& out, bool& folder) {
         id = g_sel_id;
     }
     if (LivePlayer* p = find_player(id)) {
-        if (p->available() || p->wait_when_missing()) return p;
-        logf("%s was chosen but isn't running: playing all music", narrow(p->name()).c_str());
+        if (p->available() || p->wait_when_missing()) {
+            warned_id.clear();
+            return p;
+        }
+        if (warned_id != id) logf("%s was chosen but isn't running: playing all music", narrow(p->name()).c_str());
+        warned_id = id;
     } else if (!id.empty()) {
         if (library_playlist(id, out)) {
+            warned_id.clear();
             folder = true;
             return nullptr;
         }
-        logf("chosen playlist \"%s\" isn't in the music folder any more: playing all music", narrow(id).c_str());
+        if (warned_id != id) logf("chosen playlist \"%s\" isn't in the music folder any more: playing all music", narrow(id).c_str());
+        warned_id = id;
     }
     std::vector<Playlist> lists = library_playlists();
     if (!lists.empty()) {
