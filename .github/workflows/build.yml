@@ -51,7 +51,7 @@ jobs:
       - name: Install llvm-mingw + ninja
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build
-          curl -fsSL "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz" -o llvm-mingw.tar.xz
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/llvm-mingw-${LLVM_MINGW_VERSION}-ucrt-ubuntu-22.04-x86_64.tar.xz" -o llvm-mingw.tar.xz
           sudo mkdir -p /opt/llvm-mingw
           sudo tar -xJf llvm-mingw.tar.xz -C /opt/llvm-mingw --strip-components=1
           echo "/opt/llvm-mingw/bin" >> "$GITHUB_PATH"
