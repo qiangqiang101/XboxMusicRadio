@@ -25,6 +25,8 @@ Build: `forza_durango_release_final.exe` (24 Nov 2015). Addresses are RVAs (`gam
 
 - In game: the radio station "Xbox Music" (`MyProfile.str` `IDS_RadioStation8_Name`); the playlist is chosen in the
   profile's Audio Options (`IDS_XboxMusicDescription`; the default is "Horizon 2 Mix", `IDS_DefaultPlaylist_Name`).
+  Audio Options builds its list at `0xC68D2E`: the default entry first (value 0, its id empty), when
+  `XboxMusicAvailable`, then the PlaylistBrowser's playlists.
 - `game+0xFDE220` `set_playlist(manager, std::wstring* id)` makes a new `XboxMusic::Playlist` (0x198 bytes, id at
   +0x98) at `manager+0x6660` when the id differs, and frees the string it was given. Called with the saved
   `XboxMusicSettings.DefaultPlaylistId` at startup (`0xE9308C`) and when leaving Audio Options (`AudioOptions`
@@ -69,6 +71,29 @@ Every XboxMusic object has a vtable at +0 with `[0]` success and `[1]` failure c
 - The sign-in starts when the game reads `XboxMusicSettings` (`0xE92BB0` → `0xFDDEB0` → update `0xFE5090`).
   Success copies `HasSubscription` to +0x78 and `IsSubscriptionAvailableForPurchase` to +0x79, state 2.
   Available but not subscribed raises event 5 and retries.
+- Auth update `0xFE5090`: state 0 calls `GetUserPermissions(result@+0x80, task@+0x98)` and moves to 3 (1 while
+  calling); state 3 goes back to 0 only once its retry timer says the task is gone and 10 s passed. The failure
+  callback `0xFE4440` also sets 3 and raises event 4. After startup the update only runs from the manager update
+  `0xFDE410`, and only while the game's own player runs (`manager+0x6668`), which it never does with the mod.
+  `0xFE3FA0(auth)` (signed in: state > 1, +0x78, +0x79, no `xboxmusicrevokesubscription`) gates the Audio Options
+  playlist list.
+- **Startup race:** that first `GetUserPermissions` (and `set_playlist` with the saved id) come while the profile
+  loads, about as soon as `wait_for_code` returns. If they beat the hooks, the real request goes to
+  `music.xboxlive.com` and never finishes: state 3 for good, the Xbox Music row stays grey and shows the default
+  playlist, and the station plays all music. Seen in the log as `sign-in state 3, region ok 0` and no `playlist
+  chosen`. So those hooks go on first, one by one, and the first `XboxMusicAvailable` after that catches up: it reads
+  the chosen playlist (`manager+0x6660` → `+0x98`) and, if the task at +0x98 isn't ours, closes it like a finished
+  one (`0xEDB550` = Close + Release; tracker +0x10, +0x70, +0x88 cleared, as `0xF05050` leaves them, but without the
+  failure callback) and runs the update again from state 0.
+- Task trackers: `0xF05050(tracker, hr)` finishes one (takes the handle from +0x10, notifies, then the owner's
+  success `[0]` or failure `[1]` callback, then `0xEDB550(handle)`); `0xF05040` is the same with `0x80500011`
+  (aborted). The poller `0xF05250` reads each handle's status through `0xEDB5C0`.
+- PlaylistBrowser (at `manager+8`): `0xFDE1F0(manager)` → `0xFE5CC0(browser)` clears the list, aborts a fetch in
+  progress and calls `GetPlaylists` again. Audio Options' update calls it once per page (`+0x472`) once signed in.
+- The game's text language: the string tables' manager `[game+0x3662990]`, an MSVC `std::string` code at `+0x30`
+  ("EN", "DE", "CHT", ...), as FH2ANNA and Extra Options read it (`src/i18n.cpp`).
+- `0xFDE000()` opens the Xbox Music app (`Launcher.LaunchUriAsync` `0xC57AE0` with `ms-xbl-18ffc9f4://`): the
+  Audio Options X button (`0xC89AC0`) and the Xbox Music intro (`0xE36B50`). The mod hooks it to refresh instead, and renames the hint (`HelpButtons.str` `0x70C2` `IDS_Launch_Xbox_Music`) to "Refresh Music".
 - SongStream update `0xFE5230`: builds `clientInstanceId` from
   `Windows.Networking.Connectivity.NetworkInformation` (`0xFE2A30`, throws on failure), then `GetSongURL(id@+0x78,
   client@+0xB8, result@+0x1B0, task@+0x130)`. Success copies the URL to the std::wstring at +0x98.

@@ -4,6 +4,8 @@
 // table, never removed, so a song id the game holds stays valid.
 #include "library.hpp"
 
+#include "i18n.hpp"
+
 #include <windows.h>
 #include <shobjidl.h>
 #include <propsys.h>
@@ -239,7 +241,7 @@ void scan() {
     if (lists.size() > 1) {   // every song, first in the list: what the station plays until a playlist is chosen
         Playlist all;
         all.id   = kAllMusicId;
-        all.name = L"All music";
+        all.name = trw(Text::AllMusic);   // in the game's language
         for (const auto& p : lists) all.songs.insert(all.songs.end(), p.songs.begin(), p.songs.end());
         lists.insert(lists.begin(), std::move(all));
     }

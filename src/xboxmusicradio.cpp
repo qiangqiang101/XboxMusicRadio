@@ -19,12 +19,15 @@
 #include "radio.hpp"
 #include "spotify.hpp"
 #include "apps.hpp"
+#include "anna.hpp"
+#include "i18n.hpp"
 
 #include <windows.h>
 #include <knownfolders.h>
 #include <shlobj.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -57,12 +60,21 @@ constexpr uintptr_t kXboxMusicAvailable        = 0x140FDDF90;   // bool (manager
 constexpr uintptr_t kTaskFail                  = 0x140F05000;   // (tracker*, hr): the owner's failure callback
 constexpr uintptr_t kManager                   = 0x14365AE08;   // the Xbox Music manager (pointer)
 constexpr uintptr_t kSetPlaylist               = 0x140FDE220;   // (manager*, std::wstring* id): what Audio Options calls
+constexpr uintptr_t kAuthUpdate                = 0x140FE5090;   // (auth*): state 0 sends GetUserPermissions
+constexpr uintptr_t kSignedIn                  = 0x140FE3FA0;   // bool (auth*): state > 1, subscribed, region ok
+constexpr uintptr_t kRefreshPlaylists          = 0x140FDE1F0;   // (manager*): PlaylistBrowser refresh (GetPlaylists again)
+constexpr uintptr_t kLaunchMusicApp            = 0x140FDE000;   // (): opens ms-xbl-18ffc9f4:// (the Audio Options X button)
+constexpr uintptr_t kTaskClose                 = 0x140EDB550;   // (handle): Close + Release a task handle
 
 // Manager fields.
+constexpr size_t kMgrPlaylist   = 0x6660;   // XboxMusic::Playlist*: the chosen playlist
+constexpr size_t kPlaylistId    = 0x98;     // its id, a std::wstring
 constexpr size_t kMgrServerFlag = 0x6790;   // enableXboxMusic from GetEconomySettings (or the save)
 constexpr size_t kMgrAuth       = 0x6670;   // XboxMusicAuthentication
-constexpr size_t kAuthState     = 0x118;    // 2 = signed in
+constexpr size_t kAuthState     = 0x118;    // 0 ask, 1 asking, 3 waiting for the answer (or to retry), 2 signed in
 constexpr size_t kAuthRegion    = 0x79;     // IsSubscriptionAvailableForPurchase
+constexpr size_t kAuthTracker   = 0x88;     // its task tracker (handle at +0x10, start time +0x70, elapsed +0x88)
+constexpr size_t kAuthTask      = kAuthTracker + 0x10;   // the GetUserPermissions task handle
 
 // Reply layouts (from the game's reflection tables).
 constexpr size_t kPermSize = 2;   // HasSubscription, IsSubscriptionAvailableForPurchase
@@ -410,12 +422,64 @@ struct MsvcWString {
 // set_playlist(manager, id): the game's choice, from the saved setting at startup and from Audio Options.
 // The radio plays that playlist; the game's own player never starts (the station's play command is ours).
 void (*g_set_playlist_orig)(uint8_t*, MsvcWString*) = nullptr;
+std::atomic<bool> g_playlist_seen{false};   // set_playlist has told us the choice
 void set_playlist_detour(uint8_t* mgr, MsvcWString* id) {
-    if (id) radio_select_playlist(std::wstring(id->cap >= 8 ? id->ptr : id->buf, id->size));   // it frees the string
+    if (id) {
+        radio_select_playlist(std::wstring(id->cap >= 8 ? id->ptr : id->buf, id->size));   // it frees the string
+        g_playlist_seen = true;
+    }
     g_set_playlist_orig(mgr, id);
 }
 
+// ---- Catching up with what the game did before the hooks were on ----------------------------------------------
+// The game reads its Xbox Music settings while it loads the profile, and that may be before our hooks are on (the
+// game runs while every mod makes its hooks). It then sends the real GetUserPermissions, which nothing answers any
+// more: the sign-in stays at state 3 for good, so Audio Options greys out its Xbox Music row; and the saved playlist
+// goes to set_playlist unseen, so the station plays all music instead of the choice (Spotify, say).
+// Both are put right from here, on the game's thread (the game calls XboxMusicAvailable from its UI and update).
+
+// Drops the game's own unanswered GetUserPermissions and asks again (answered by us). The handle is closed the way
+// the game closes a finished task (game+0xF05050), but without its failure callback: that would raise the
+// "couldn't sign in" event.
+bool retry_sign_in(uint8_t* mgr) {
+    uint8_t* auth = mgr + kMgrAuth;
+    auto& state   = *reinterpret_cast<int32_t*>(auth + kAuthState);
+    auto& task    = *reinterpret_cast<void**>(auth + kAuthTask);
+    if ((state != 1 && state != 3) || !task || *reinterpret_cast<const void* const* const*>(task) == kTaskVtbl) return false;
+    void* stuck = task;
+    task        = nullptr;
+    game<HRESULT (*)(void*)>(kTaskClose)(stuck);
+    *reinterpret_cast<uint64_t*>(auth + kAuthTracker + 0x70) = 0;   // its start time and elapsed time, as the game
+    *reinterpret_cast<uint64_t*>(auth + kAuthTracker + 0x88) = 0;   // leaves them when a task finishes
+    state = 0;
+    game<void (*)(uint8_t*)>(kAuthUpdate)(auth);   // state 0: GetUserPermissions, ours now
+    logf("Xbox Music sign-in: the game asked the old service before the hooks were on; asked again");
+    return true;
+}
+
+// The playlist the game chose (Playlist at manager+0x6660, its id at +0x98), when set_playlist went by unseen.
+void catch_up_playlist(uint8_t* mgr) {
+    if (g_playlist_seen) return;
+    uint8_t* pl = *reinterpret_cast<uint8_t**>(mgr + kMgrPlaylist);
+    if (!pl) return;   // not chosen yet: set_playlist will tell us
+    uint8_t* s  = pl + kPlaylistId;
+    size_t size = *reinterpret_cast<size_t*>(s + 0x10), cap = *reinterpret_cast<size_t*>(s + 0x18);
+    if (size > cap || size > kIdChars) return;
+    g_playlist_seen = true;
+    std::wstring id(msvc_wstring(s), size);
+    logf("the game chose its playlist before the hooks were on: %s", id.empty() ? "(none)" : narrow(id).c_str());
+    radio_select_playlist(id);
+}
+
+std::atomic<bool> g_hooks_on{false};
+bool g_caught_up = false;   // the game's thread only
+
 bool available_detour(uint8_t* mgr) {
+    if (mgr && g_hooks_on && !g_caught_up) {
+        g_caught_up = true;
+        catch_up_playlist(mgr);
+        retry_sign_in(mgr);
+    }
     if (mgr) mgr[kMgrServerFlag] = 1;
     bool r = g_available_orig(mgr);
     if (InterlockedExchange(&g_last_available, r ? 1 : 0) != (r ? 1 : 0)) {
@@ -424,6 +488,31 @@ bool available_detour(uint8_t* mgr) {
              auth ? *reinterpret_cast<int32_t*>(auth + kAuthState) : -1, auth ? auth[kAuthRegion] : -1);
     }
     return r;
+}
+
+// ---- The Audio Options X button ------------------------------------------------------------------------------
+// "Open the Xbox Music app" (game+0xFDE000, Audio Options and the Xbox Music intro) launches ms-xbl-18ffc9f4://,
+// which goes nowhere on PC. Instead: unstick the sign-in if it's stuck, scan the music folder again and refresh the
+// playlist list (the game's own refresh; our GetPlaylists rescans), and if Spotify is the choice, move Spotify
+// playback here.
+void launch_music_app_detour() {
+    uint8_t* mgr = *game<uint8_t**>(kManager);
+    logf("X button (Xbox Music app): refreshing");
+    if (mgr) {
+        catch_up_playlist(mgr);
+        retry_sign_in(mgr);
+    }
+    if (mgr && game<bool (*)(uint8_t*)>(kSignedIn)(mgr + kMgrAuth)) {
+        game<void (*)(uint8_t*)>(kRefreshPlaylists)(mgr);
+        logf("X button: scanning the music folder and refreshing the playlist list");
+    } else {
+        library_rescan();   // the list refreshes by itself once signed in (Audio Options asks then)
+        logf("X button: scanning the music folder (the playlist list follows once Xbox Music is signed in)");
+    }
+    if (radio_selected_playlist() == kSpotifyId) {
+        if (!spotify_running()) logf("X button: Spotify is chosen but Soloist isn't running");
+        else if (spotify_take_over()) logf("X button: Spotify plays on the radio");
+    }
 }
 
 void* g_unused_orig = nullptr;   // the replaced functions' originals are never called
@@ -437,12 +526,26 @@ struct HookSpec {
 
 bool install_hooks() {
     if (!radio_install_gate(g_api, g_mod, g_base, g_radio)) return false;
-    const HookSpec hooks[] = {
-        {"Xbox Music available (sets the server flag)", kXboxMusicAvailable, reinterpret_cast<void*>(&available_detour),
-         reinterpret_cast<void**>(&g_available_orig)},
+    // The game reads its Xbox Music settings (the saved playlist, then the sign-in) while it loads the profile, a
+    // second or two from now: these go on one by one, right away, not with the rest (available_detour catches up
+    // on anything that still went by first).
+    const HookSpec early[] = {
+        {"XboxMusic GetUserPermissions (answered locally)", kGetUserPermissions, reinterpret_cast<void*>(&get_user_permissions), &g_unused_orig},
         {"Xbox Music set playlist (the radio follows it)", kSetPlaylist, reinterpret_cast<void*>(&set_playlist_detour),
          reinterpret_cast<void**>(&g_set_playlist_orig)},
-        {"XboxMusic GetUserPermissions (answered locally)", kGetUserPermissions, reinterpret_cast<void*>(&get_user_permissions), &g_unused_orig},
+        {"Xbox Music available (sets the server flag)", kXboxMusicAvailable, reinterpret_cast<void*>(&available_detour),
+         reinterpret_cast<void**>(&g_available_orig)},
+    };
+    for (const auto& h : early) {
+        FH2Hook* hook = g_api->hook_function(g_mod, h.name, game<void*>(h.va), h.detour, h.original);
+        if (!hook || !g_api->enable_hooks(g_mod, hook)) {
+            logf("couldn't hook %s at game+0x%llX", h.name, static_cast<unsigned long long>(h.va - kImageBase));
+            g_api->disable_hooks(g_mod, nullptr);
+            return false;
+        }
+    }
+    g_hooks_on = true;   // available_detour may catch up now: GetUserPermissions and set_playlist are ours
+    const HookSpec hooks[] = {
         {"XboxMusic GetPlaylists (music folder)", kGetPlaylists, reinterpret_cast<void*>(&get_playlists), &g_unused_orig},
         {"XboxMusic ContinueGetPlaylists (music folder)", kContinueGetPlaylists, reinterpret_cast<void*>(&continue_get_playlists), &g_unused_orig},
         {"XboxMusic GetPlaylistTracks (music folder)", kGetPlaylistTracks, reinterpret_cast<void*>(&get_playlist_tracks), &g_unused_orig},
@@ -459,9 +562,15 @@ bool install_hooks() {
         }
     }
     ok = ok && radio_install();
-    if (ok && g_api->enable_hooks(g_mod, nullptr)) return true;
-    g_api->disable_hooks(g_mod, nullptr);   // all or nothing: half of these would leave the station broken
-    return false;
+    if (!ok || !g_api->enable_hooks(g_mod, nullptr)) {
+        g_api->disable_hooks(g_mod, nullptr);   // all or nothing: half of these would leave the station broken
+        return false;
+    }
+    // Not needed for the station: without it the X button just does what it did.
+    FH2Hook* x = g_api->hook_function(g_mod, "Xbox Music app button (refreshes instead)", game<void*>(kLaunchMusicApp),
+                                      reinterpret_cast<void*>(&launch_music_app_detour), &g_unused_orig);
+    if (!x || !g_api->enable_hooks(g_mod, x)) logf("couldn't hook the Xbox Music app button: it won't refresh");
+    return true;
 }
 
 // ---- Settings ----------------------------------------------------------------------------------------------------
@@ -541,6 +650,7 @@ void write_default_ini() {
         "quiet_speakers=1\r\n"
         "play_pause_key=Ctrl+Alt+P\r\n"
         "next_key=Ctrl+Alt+Right\r\n"
+        "prev_key=Ctrl+Alt+Left\r\n"
         "\r\n"
         "[qqmusic]\r\n"
         "; QQ Music (QQMusic.exe)\r\n"
@@ -549,6 +659,7 @@ void write_default_ini() {
         "quiet_speakers=1\r\n"
         "play_pause_key=Ctrl+Alt+F5\r\n"
         "next_key=Ctrl+Alt+Right\r\n"
+        "prev_key=Ctrl+Alt+Left\r\n"
         "\r\n"
         "[debug]\r\n"
         "; 1: log every request from the game to fh2-mods\\platform.log\r\n"
@@ -598,6 +709,7 @@ void start_music_apps() {
         if (d.install_path[0] && ExpandEnvironmentStringsW(d.install_path, path, MAX_PATH)) o.install_path = path;
         o.play_pause_key = ini_string(d.section, L"play_pause_key", L"");
         o.next_key       = ini_string(d.section, L"next_key", L"");
+        o.prev_key       = ini_string(d.section, L"prev_key", L"");
         o.missing_hint   = d.hint;
         o.quiet_speakers = GetPrivateProfileIntW(d.section, L"quiet_speakers", 1, g_ini.c_str()) != 0;
         o.trace          = g_trace;
@@ -616,9 +728,9 @@ void add_missing_settings() {
         {L"youtube", L"enabled", L"1"},
         {L"youtube", L"app", L""},       {L"youtube", L"quiet_speakers", L"1"},  {L"netease", L"enabled", L"1"},
         {L"netease", L"app", L""},       {L"netease", L"quiet_speakers", L"1"},  {L"netease", L"play_pause_key", L"Ctrl+Alt+P"},
-        {L"netease", L"next_key", L"Ctrl+Alt+Right"}, {L"qqmusic", L"enabled", L"1"}, {L"qqmusic", L"app", L""},
+        {L"netease", L"next_key", L"Ctrl+Alt+Right"}, {L"netease", L"prev_key", L"Ctrl+Alt+Left"}, {L"qqmusic", L"enabled", L"1"}, {L"qqmusic", L"app", L""},
         {L"qqmusic", L"quiet_speakers", L"1"}, {L"qqmusic", L"play_pause_key", L"Ctrl+Alt+F5"},
-        {L"qqmusic", L"next_key", L"Ctrl+Alt+Right"}};
+        {L"qqmusic", L"next_key", L"Ctrl+Alt+Right"}, {L"qqmusic", L"prev_key", L"Ctrl+Alt+Left"}};
     for (const auto& k : keys) {
         wchar_t buf[8];
         if (GetPrivateProfileStringW(k[0], k[1], L"\x01", buf, 8, g_ini.c_str()) == 1 && buf[0] == 1)
@@ -644,7 +756,7 @@ void add_next_hotkey() {
     FH2Hotkey h{};
     h.size      = sizeof h;
     h.key       = "Next";
-    h.label     = "Xbox Music Radio: next song";
+    h.label     = tr(Text::NextHotkey);
     h.vk        = GetPrivateProfileIntW(L"music", L"next_key", VK_F6, g_ini.c_str());
     h.pad_chord = GetPrivateProfileIntW(L"music", L"next_pad", 0, g_ini.c_str());
     h.on_press  = on_next;
@@ -658,8 +770,7 @@ void add_settings(bool read_tags) {
     e.size          = sizeof e;
     e.key           = "Enabled";
     e.label         = "Xbox Music Radio";
-    e.description   = "Turns the radio's Xbox Music station on. It plays your music files (each folder in your "
-                      "Windows Music folder is a playlist), Spotify or a music app on your PC: choose in Audio Options.";
+    e.description   = tr(Text::EnabledDesc);
     e.value         = g_enabled ? 1 : 0;
     e.needs_restart = 1;
     e.on_change     = on_setting;
@@ -668,9 +779,8 @@ void add_settings(bool read_tags) {
     FH2Setting t{};
     t.size          = sizeof t;
     t.key           = "ReadTags";
-    t.label         = "Song names from tags";
-    t.description   = "On: titles and artists come from the music files' tags. Off: from the file names, as in "
-                      "\"Artist - Title.mp3\".";
+    t.label         = tr(Text::TagsLabel);
+    t.description   = tr(Text::TagsDesc);
     t.value         = read_tags ? 1 : 0;
     t.needs_restart = 1;
     t.on_change     = on_setting;
@@ -679,8 +789,8 @@ void add_settings(bool read_tags) {
     FH2Setting sh{};
     sh.size          = sizeof sh;
     sh.key           = "Shuffle";
-    sh.label         = "Shuffle songs";
-    sh.description   = "On: the playlist plays in a random order. Off: in folder order.";
+    sh.label         = tr(Text::ShuffleLabel);
+    sh.description   = tr(Text::ShuffleDesc);
     sh.value         = g_radio.shuffle ? 1 : 0;
     sh.needs_restart = 1;
     sh.on_change     = on_setting;
@@ -708,6 +818,7 @@ DWORD WINAPI worker(LPVOID) {
     void* code = g_api->wait_for_code(0xFFFFFFFFu);
     if (!code) return 0;
     g_base = reinterpret_cast<uintptr_t>(code);
+    i18n_watch(g_base, [](const char* line) { g_api->log(g_mod, line); });
     if (install_hooks()) logf("Xbox Music hooks on");
     else logf("Xbox Music hooks FAILED: the radio stays off");
     return 0;
@@ -719,6 +830,9 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     if (api->api_version < 3) return 1;   // hooks
     g_api = api;
 
+    std::string language = i18n_init(std::wstring(api->azimuth_dir) + L"\\XboxMusicRadio\\XboxMusicRadio.ini", api->azimuth_dir,
+                                     api->game_dir ? api->game_dir : L"");   // before any text
+
     FH2ModInfo info{};
     info.size             = sizeof info;
     info.name             = "XboxMusicRadio";
@@ -726,11 +840,10 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     info.github_repo      = "qiangqiang101/XboxMusicRadio";
     info.platform_version = FH2MOD_PLATFORM_VERSION;
     info.check_updates    = 1;
-    info.description      = "Turns the radio's Xbox Music station on and plays your music on it: your own files (each folder "
-                            "in your Music folder is a playlist), Spotify, YouTube Music, NetEase Cloud Music or QQ "
-                            "Music, chosen in Audio Options.";
+    info.description      = tr(Text::ModDescription);
     g_mod = api->register_mod(&info);
     if (!g_mod) return 0;
+    logf("text in the game's language: %s", language.c_str());
 
     std::wstring dir = std::wstring(api->azimuth_dir) + L"\\XboxMusicRadio";
     CreateDirectoryW(dir.c_str(), nullptr);
@@ -746,6 +859,29 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     if (!g_enabled) {
         logf("turned off ([radio] enabled=0)");
         return 0;
+    }
+    // The Audio Options X button's label, "Launch Xbox Music" (HelpButtons.str 0x70C2 IDS_Launch_Xbox_Music): it
+    // refreshes now (launch_music_app_detour). set_string would write one text to every language; replacing each
+    // language's own text instead gives each table its translation, right from the first start (the game's language
+    // isn't known yet here). German and Dutch share theirs: that one goes by the language seen last.
+    {
+        bool dutch = std::strcmp(tr(Text::RefreshButton), tr_in("NL", Text::RefreshButton)) == 0;
+        const struct {
+            const char* code;
+            const wchar_t* original;
+        } labels[] = {
+            {"EN", L"Launch Xbox Music"},   {dutch ? "NL" : "DE", L"Xbox Music starten"}, {"FR", L"Lancer Xbox Music"},
+            {"ES", L"Iniciar Xbox Music"},  {"IT", L"Avvia Xbox Music"},  {"JP", L"Xbox Music 開始"},
+            {"KO", L"Xbox Music 실행"},     {"CHT", L"啟動 Xbox Music"},  {"PL", L"Uruchom Xbox Music"},
+            {"RU", L"Включить Xbox Music"}, {"BR", L"Abrir o Xbox Music"},
+        };
+        for (const auto& l : labels) {
+            const char* to = tr_in(l.code, Text::RefreshButton);
+            int n          = MultiByteToWideChar(CP_UTF8, 0, to, -1, nullptr, 0);
+            std::wstring w(n > 0 ? static_cast<size_t>(n - 1) : 0, L'\0');
+            if (n > 1) MultiByteToWideChar(CP_UTF8, 0, to, -1, w.data(), n);
+            api->replace_string(g_mod, "HelpButtons.str", l.original, w.c_str());
+        }
     }
 
     LibraryOptions opt;
@@ -769,6 +905,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
         spotify_start(sp, [](const char* line) { g_api->log(g_mod, line); });
     }
     start_music_apps();
+    anna_start(api, g_mod);   // after the live players: its Playlist list has them
 
     if (api->api_version >= 9) {
         api->add_command(g_mod, "status", "playlists, songs and whether the game offers Xbox Music", cmd_status, nullptr);

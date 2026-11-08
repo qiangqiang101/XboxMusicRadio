@@ -213,6 +213,7 @@ enum {
     kSessionTryPlay            = 10,
     kSessionTryPause           = 11,
     kSessionTrySkipNext        = 16,
+    kSessionTrySkipPrevious    = 17,
     kPropsTitle                = 6,
     kPropsArtist               = 9,
     kInfoPlaybackStatus        = 7,
@@ -310,7 +311,8 @@ void restore_all_notes(const std::wstring& ini) {
 class AppPlayer final : public LivePlayer {
 public:
     AppPlayer(const AppOptions& opt, LogFn log)
-        : opt_(opt), log_(std::move(log)), play_pause_(parse_chord(opt.play_pause_key)), next_(parse_chord(opt.next_key)) {}
+        : opt_(opt), log_(std::move(log)), play_pause_(parse_chord(opt.play_pause_key)), next_(parse_chord(opt.next_key)),
+          prev_(parse_chord(opt.prev_key)) {}
 
     const wchar_t* id() const override { return opt_.id.c_str(); }
     const wchar_t* name() const override { return opt_.name.c_str(); }
@@ -329,6 +331,7 @@ public:
         return GetTickCount64() - last_sound_.load() < 1500;   // no media session: going by the recorded sound
     }
     void next() override { cmd_ = kCmdNext; }
+    void previous() override { cmd_ = kCmdPrevious; }
     void pause() override { cmd_ = kCmdPause; }
     void resume() override { cmd_ = kCmdPlay; }
     bool now_playing(std::wstring& title, std::wstring& artist) override {
@@ -347,11 +350,11 @@ public:
     }
 
 private:
-    enum { kCmdNone, kCmdNext, kCmdPause, kCmdPlay };
+    enum { kCmdNone, kCmdNext, kCmdPause, kCmdPlay, kCmdPrevious };
 
     AppOptions opt_;
     LogFn log_;
-    Chord play_pause_, next_;
+    Chord play_pause_, next_, prev_;
 
     std::atomic<bool> found_{false}, has_session_{false}, session_playing_{false}, live_{false};
     std::atomic<int> cmd_{kCmdNone};
@@ -478,10 +481,15 @@ private:
             if (int cmd = cmd_.exchange(kCmdNone)) {
                 if (session) {
                     void* op = nullptr;
-                    int slot = cmd == kCmdNext ? kSessionTrySkipNext : cmd == kCmdPause ? kSessionTryPause : kSessionTryPlay;
+                    int slot = cmd == kCmdNext       ? kSessionTrySkipNext
+                             : cmd == kCmdPrevious ? kSessionTrySkipPrevious
+                             : cmd == kCmdPause    ? kSessionTryPause
+                                                   : kSessionTryPlay;
                     if (SUCCEEDED(vcall(session, slot, &op))) release(op);   // fire and forget
                 } else if (cmd == kCmdNext) {
                     press(next_);
+                } else if (cmd == kCmdPrevious) {
+                    press(prev_);
                 } else if ((cmd == kCmdPause) == playing()) {   // a play/pause toggle: only when it changes something
                     press(play_pause_);
                 }

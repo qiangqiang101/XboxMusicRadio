@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(xboxmusicradio VERSION 1.0.2 LANGUAGES C CXX RC)
+project(xboxmusicradio VERSION 1.1.0 LANGUAGES C CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,8 +9,8 @@ endif()
 
 add_subdirectory(platform)   # fh2mod_platform (DWrite.dll) and fh2mod_api
 
-add_library(xboxmusicradio SHARED src/xboxmusicradio.cpp src/library.cpp src/radio.cpp src/spotify.cpp src/apps.cpp src/capture.cpp src/decoder.c)
-target_include_directories(xboxmusicradio PRIVATE third_party/dr_libs)
+add_library(xboxmusicradio SHARED src/xboxmusicradio.cpp src/library.cpp src/radio.cpp src/spotify.cpp src/apps.cpp src/capture.cpp src/i18n.cpp src/anna.cpp src/decoder.c)
+target_include_directories(xboxmusicradio PRIVATE include third_party/dr_libs)
 # dr_mp3 / dr_flac / dr_wav: third-party code, built without our warnings.
 set_source_files_properties(src/decoder.c PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/W0,-w>")
 target_link_libraries(xboxmusicradio PRIVATE fh2mod_api ole32 shell32 propsys uuid mmdevapi winhttp runtimeobject)

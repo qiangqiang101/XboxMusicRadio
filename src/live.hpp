@@ -18,6 +18,7 @@ public:
     virtual const char* missing_hint() const = 0;   // for the log and the radio display while it waits
     virtual bool playing() = 0;
     virtual void next()    = 0;
+    virtual void previous() = 0;
     virtual void pause()   = 0;
     virtual void resume()  = 0;
     // The song it reported last. False if nothing changed since the last call.

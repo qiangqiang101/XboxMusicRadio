@@ -418,6 +418,7 @@ public:
     const char* missing_hint() const override { return "Soloist isn't running"; }
     bool playing() override { return spotify_playing(); }
     void next() override { spotify_next(); }
+    void previous() override { spotify_previous(); }
     void pause() override { spotify_pause(); }
     void resume() override { spotify_resume(); }
     bool now_playing(std::wstring& title, std::wstring& artist) override { return spotify_now_playing(title, artist); }
@@ -504,9 +505,22 @@ bool spotify_start(const SpotifyOptions& opt, LogFn log) {
     return true;
 }
 
+bool spotify_take_over() {
+    if (!g_running) return false;
+    if (!g_logged_in) {
+        logf("Soloist: not signed in yet: in the Spotify app, play on the device \"%s\" once", narrow(unquoted(g_opt.device)).c_str());
+        return false;
+    }
+    if (g_active) return send_command("play");   // already here: just make sure it plays
+    if (try_activate()) return true;
+    logf("Soloist: no control connection yet; try again in a moment");
+    return false;
+}
+
 bool spotify_running() { return g_running; }
 bool spotify_playing() { return g_running && g_playing; }
 void spotify_next() { send_command("skip_next"); }
+void spotify_previous() { send_command("skip_prev"); }
 void spotify_pause() { send_command("pause"); }
 void spotify_resume() { send_command("play"); }
 

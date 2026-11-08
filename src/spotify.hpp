@@ -29,9 +29,13 @@ struct SpotifyOptions {
 bool spotify_start(const SpotifyOptions& opt, LogFn log);
 // Soloist is running: the station can play it.
 bool spotify_running();
+// Moves Spotify playback to Soloist now and plays (the Audio Options X button). False if it can't yet (not signed in,
+// no control connection); the log says why.
+bool spotify_take_over();
 // Soloist is playing (not paused or idle).
 bool spotify_playing();
 void spotify_next();
+void spotify_previous();
 void spotify_pause();
 void spotify_resume();
 // The track Soloist reported last. False if nothing changed since the last call.

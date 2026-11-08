@@ -21,6 +21,7 @@ struct AppOptions {
     std::wstring install_path;          // where the app usually is, to offer it when it's installed but not running
     std::wstring play_pause_key;        // its global shortcut ("Ctrl+Alt+P"), for when it has no media session
     std::wstring next_key;              // ("Ctrl+Alt+Right")
+    std::wstring prev_key;              // ("Ctrl+Alt+Left")
     std::string missing_hint;           // "start NetEase Cloud Music and play something"
     bool quiet_speakers = true;
     bool trace          = false;

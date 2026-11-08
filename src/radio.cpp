@@ -15,6 +15,7 @@
 
 #include "decoder.h"
 #include "live.hpp"
+#include "i18n.hpp"
 
 #include <windows.h>
 
@@ -436,6 +437,7 @@ std::mutex g_sel_mx;
 std::wstring g_sel_id;                 // chosen playlist; empty = All music (or the only one)
 std::atomic<uint32_t> g_sel_gen{0};    // bumped when the choice changes
 std::atomic<bool> g_skip{false};
+std::atomic<bool> g_back{false};   // the song before
 std::wstring g_playing_list, g_playing_song;
 
 // The live players (Spotify, music apps), in Audio Options order. While one is the station's source, its recording
@@ -496,6 +498,7 @@ void set_now_playing(const std::wstring& list, const std::wstring& title, const 
     g_playing_list = list;
     g_np_title     = fold_ascii(title, 60);
     g_np_artist    = fold_ascii(artist.empty() ? list : artist, 40);
+    if (g_np_artist.empty()) g_np_artist = "Xbox Music";   // a name in a script the display can't draw
     g_playing_song = label;
 }
 
@@ -515,7 +518,10 @@ void play_live(uint32_t gen, LivePlayer& src) {
             if (!src.wait_when_missing()) break;
             if (!told_missing) {
                 logf("%s: waiting: %s", name.c_str(), src.missing_hint());
-                set_now_playing(src.name(), L"Waiting for " + std::wstring(src.name()), L"", L"");
+                std::wstring waiting = trw(Text::WaitingFor);
+                size_t at            = waiting.find(L"{0}");
+                if (at != std::wstring::npos) waiting.replace(at, 3, src.name());
+                set_now_playing(src.name(), waiting, L"", L"");
             }
             told_missing = true;
             src.set_live(false);
@@ -531,6 +537,7 @@ void play_live(uint32_t gen, LivePlayer& src) {
             logf("%s: %s", name.c_str(), narrow(label).c_str());
         }
         if (g_skip.exchange(false)) src.next();
+        if (g_back.exchange(false)) src.previous();
         if (listening()) {
             away = 0;
             if (paused_it) {
@@ -598,10 +605,13 @@ DWORD WINAPI player(LPVOID) {
             set_now_playing(pl.name, s.title, s.artist, label);
             logf("playing %s", narrow(label).c_str());
             g_skip = false;
+            g_back = false;
             for (;;) {
                 keep_timeline();
-                if (gen != g_sel_gen.load() || g_skip.exchange(false)) {
+                bool back = g_back.exchange(false);
+                if (gen != g_sel_gen.load() || g_skip.exchange(false) || back) {
                     g_flush = true;   // a new choice or a skip: drop what's banked of this song
+                    if (back) i = (i == 0 ? 0 : i - 1) - 1;   // the loop's ++i lands on the song before (the first: itself)
                     break;
                 }
                 uint64_t fill = g_wr.load() - g_rd.load(std::memory_order_acquire);
@@ -710,7 +720,14 @@ void radio_select_playlist(const std::wstring& id) {
     logf("playlist chosen: %s", id.empty() ? "(none: all music)" : narrow(id).c_str());
 }
 
+std::wstring radio_selected_playlist() {
+    std::lock_guard<std::mutex> lk(g_sel_mx);
+    return g_sel_id;
+}
+
 void radio_next() { g_skip = true; }
+void radio_previous() { g_back = true; }
+bool radio_on_air() { return g_selected; }
 
 std::string players_status() {
     std::string out;

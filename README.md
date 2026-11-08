@@ -58,6 +58,13 @@ Music\
 2. To choose what it plays: Pause > Settings > Audio Options, pick it under Xbox Music, and leave the page. Spotify and the
    music apps come first in the list, then your folders.
 3. **F6** skips to the next song. You can change the key, or add a controller chord, on the Mods page.
+4. The **X** button in Audio Options, **Refresh Music** (the game's "Launch Xbox Music"): it scans the music
+   folder again, reloads the playlist list (apps you started after the game show up), and if Spotify is chosen, moves
+   Spotify playback to **FH2 Radio** and starts it.
+5. With [FH2 ANNA](https://github.com/qiangqiang101/FH2ANNA), its menu (D-pad down) has **Xbox Music Radio**: Next
+   Track, Previous Track, and Playlist to choose what it plays (the same list as Audio Options). It's greyed out
+   unless the radio is on Xbox Music. A playlist chosen there lasts until the game restarts or you leave Audio
+   Options.
 
 The game's own **Horizon 2 Mix** entry (the default Xbox Music playlist on Xbox One) plays all your music files.
 
@@ -109,8 +116,8 @@ come back.
 - **YouTube Music** and **QQ Music** work with Windows' media controls (the ones the media keys use), which give the
   song and take the commands.
 - **NetEase Cloud Music** doesn't, so the mod reads the song from its window title and drives it with its global
-  shortcuts. Keep those on in NetEase's settings. If you changed them, set `play_pause_key=` and `next_key=` under
-  `[netease]` to match, like `next_key=Ctrl+Alt+Right`.
+  shortcuts. Keep those on in NetEase's settings. If you changed them, set `play_pause_key=`, `next_key=` and
+  `prev_key=` under `[netease]` to match, like `next_key=Ctrl+Alt+Right`.
 
 ## Settings
 
@@ -124,12 +131,17 @@ Everything is also in `XboxMusicRadio\XboxMusicRadio.ini` (changes apply the nex
 | `[radio]` | `enabled`: the mod on or off |
 | `[music]` | `folder`, `read_tags`, `shuffle`, and the next-song key (`next_key`, `next_pad`) |
 | `[spotify]` | `enabled`, `api_key`, `device` (the name in the Spotify app), `volume`, `quiet_speakers` |
-| `[youtube]`, `[netease]`, `[qqmusic]` | `enabled`, `app` (the program, if not the usual one), `quiet_speakers`, and for NetEase and QQ Music the shortcuts `play_pause_key`, `next_key` |
+| `[youtube]`, `[netease]`, `[qqmusic]` | `enabled`, `app` (the program, if not the usual one), `quiet_speakers`, and for NetEase and QQ Music the shortcuts `play_pause_key`, `next_key`, `prev_key` |
 | `[debug]` | `trace=1`: log every Xbox Music request, the radio's stations and the media sessions Windows lists |
 
 `quiet_speakers=0` leaves a player's own sound alone (you'll hear it twice: on the radio and from the player).
 
 With the platform's `fh2mod.exe`: `fh2mod XboxMusicRadio status`, `next` and `rescan`.
+
+The mod's own text (its Mods page rows, the X button and the "All music" playlist) is in the game's language: English,
+German, French, Spanish, Italian, Japanese, Korean, Traditional Chinese, Polish, Russian, Dutch or Brazilian
+Portuguese. The Mods page is written before the game has picked its language, so after you change the game's language
+the mod's rows follow from the next start. Czech and Hungarian stay English, like the game's own text there.
 
 ## Troubleshooting
 
@@ -140,6 +152,9 @@ on and off, what's chosen and each song it plays.
   another mod changed the same game code; the log names it.
 - **Silence on the station.** Check the log for `playing ...` lines. For Spotify and the apps, make sure the player is
   actually playing; for Spotify, that the Spotify app plays on **FH2 Radio**.
+- **The Xbox Music row in Audio Options is grey, or shows Horizon 2 Mix instead of your choice.** The game asked the
+  old Xbox Music service before the mod was ready. The mod notices and asks again (`Xbox Music sign-in: ... asked
+  again` in the log); if the row stays grey, press **X** on the Audio Options page.
 - **Spotify stopped working.** `Soloist: this soloist.exe has expired` in the log: download the new one.
 - **An app stays silent after the game.** The mod puts its sound back when the game closes (a small helper waits for
   the game to end), or else the next time the game starts. To fix it by hand: Windows Settings > System > Sound >

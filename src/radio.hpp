@@ -23,8 +23,12 @@ bool radio_install_gate(const FH2ModApi* api, FH2Mod* mod, uintptr_t base, const
 bool radio_install();
 // The playlist the game chose (Audio Options, or the saved one at startup); empty = All music.
 void radio_select_playlist(const std::wstring& id);
-// Skip to the next song.
+std::wstring radio_selected_playlist();   // empty: none chosen (all music)
+// Skip to the next song, or back to the one before.
 void radio_next();
+void radio_previous();
+// The radio is tuned to the Xbox Music station.
+bool radio_on_air();
 std::string radio_status();
 // The live players registered (live.hpp), in Audio Options order.
 std::vector<LivePlayer*> live_players();

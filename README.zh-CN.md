@@ -57,6 +57,11 @@ Music\
 2. 选择播放什么：暂停 > 设置 > Audio Options，在 Xbox Music 下选好，然后离开这个页面。Spotify 和各音乐软件排在列表
    最前面，后面是你的文件夹。
 3. **F6** 切到下一首。可以在 Mods 页面改按键，或者加一个手柄组合键。
+4. 音频选项里的 **X** 键 **Refresh Music**（游戏原本的“Launch Xbox Music”）改为刷新：重新扫描音乐文件夹、重新载入歌单列表（游戏启动后才打开的
+   软件也会出现）；如果选的是 Spotify，还会把 Spotify 的播放切到 **FH2 Radio** 并开始播放。
+5. 装了 [FH2 ANNA](https://github.com/qiangqiang101/FH2ANNA) 的话，它的菜单（十字键下）里有 **Xbox Music Radio**：
+   下一首、上一首，以及选择播放内容的歌单（和 Audio Options 里的列表一样）。电台不在 Xbox Music 时它是灰色的。在那里
+   选的歌单会一直有效，直到重启游戏或离开 Audio Options。
 
 游戏自带的 **Horizon 2 Mix**（Xbox One 上默认的 Xbox Music 歌单）会播放你所有的音乐文件。
 
@@ -101,7 +106,7 @@ Windows 音量合成器里调低到 -80 dB，所以你只会在电台里听到�
   放它（在 `[youtube]` 下设置 `app=chrome.exe` 来指定）。
 - **YouTube Music** 和 **QQ 音乐**支持 Windows 的媒体控制（就是媒体键用的那套），歌曲信息和控制都走它。
 - **网易云音乐**不支持，所以模组从它的窗口标题读歌名，并用它的全局快捷键来控制。请在网易云音乐的设置里保持全局快捷键
-  开启。如果你改过快捷键，请在 `[netease]` 下把 `play_pause_key=` 和 `next_key=` 设成一样的，例如
+  开启。如果你改过快捷键，请在 `[netease]` 下把 `play_pause_key=`、`next_key=` 和 `prev_key=` 设成一样的，例如
   `next_key=Ctrl+Alt+Right`。
 
 ## 设置
@@ -116,7 +121,7 @@ Windows 音量合成器里调低到 -80 dB，所以你只会在电台里听到�
 | `[radio]` | `enabled`：模组开或关 |
 | `[music]` | `folder`、`read_tags`、`shuffle`，以及切歌按键（`next_key`、`next_pad`） |
 | `[spotify]` | `enabled`、`api_key`、`device`（在 Spotify 应用里显示的设备名）、`volume`、`quiet_speakers` |
-| `[youtube]`、`[netease]`、`[qqmusic]` | `enabled`、`app`（程序名，如果不是默认的那个）、`quiet_speakers`；网易云音乐和 QQ 音乐还有快捷键 `play_pause_key`、`next_key` |
+| `[youtube]`、`[netease]`、`[qqmusic]` | `enabled`、`app`（程序名，如果不是默认的那个）、`quiet_speakers`；网易云音乐和 QQ 音乐还有快捷键 `play_pause_key`、`next_key`、`prev_key` |
 | `[debug]` | `trace=1`：记录每个 Xbox Music 请求、游戏的电台列表，以及 Windows 列出的媒体会话 |
 
 `quiet_speakers=0` 表示不动播放器本身的声音（这样你会听到两遍：电台里一遍，播放器本身一遍）。
@@ -132,6 +137,12 @@ Windows 音量合成器里调低到 -80 dB，所以你只会在电台里听到�
   代码；日志里会写是哪个。
 - **电台没有声音。** 看日志里有没有 `playing ...` 的行。Spotify 和音乐软件要确认播放器确实在放；Spotify 还要确认
   Spotify 应用是在 **FH2 Radio** 上播放。
+- **模组的文字（Mods 页面、X 键和 “All music” 歌单）跟随游戏的语言**（英语、德语、法语、西班牙语、意大利语、日语、韩语、繁体中文、
+  波兰语、俄语、荷兰语、巴西葡萄牙语）。Mods 页面在游戏选定语言之前就写好了，所以改了游戏语言后，模组的文字下次启动才会跟上。
+  游戏没有简体中文，选简体中文时游戏和模组都显示英文。
+- **音频选项里的 Xbox Music 一行是灰色的，或者显示 Horizon 2 Mix 而不是你选的歌单。** 游戏在模组准备好之前就去连了已经停用的
+  Xbox Music 服务。模组会发现并重新登录（日志里有 `Xbox Music sign-in: ... asked again`）；如果那一行还是灰色，在音频选项页面
+  按 **X**。
 - **Spotify 不能用了。** 日志里有 `Soloist: this soloist.exe has expired`：下载新版本。
 - **关掉游戏后某个软件没声音。** 游戏关闭时模组会把它的声音恢复（有个小助手程序会等游戏结束），否则下次启动游戏时恢复。
   手动修复：Windows 设置 > 系统 > 声音 > 音量合成器，把这个软件的音量调回来。
